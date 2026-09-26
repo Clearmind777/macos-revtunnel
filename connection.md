@@ -3,7 +3,7 @@
 ## 先确认的既有事实(我实测的)
 
 ```
-Windows ──ssh──▶ A(172.16.134.43:2233) ──▶ A 的 127.0.0.1:12222 ──隧道──▶ Mac sshd:26259
+Windows ──ssh──▶ A(<JUMP_HOST>:2233) ──▶ A 的 127.0.0.1:12222 ──隧道──▶ Mac sshd:26259
                                                                               │
                                                               Mac 的 DSH web:127.0.0.1:3080(只绑回环 + token 认证)
 ```
@@ -14,7 +14,7 @@ Windows ──ssh──▶ A(172.16.134.43:2233) ──▶ A 的 127.0.0.1:12222
 | A→Mac | ✅ 密钥免密已通(隧道那条 `ssh -p 12222`) |
 | Mac 的 DSH web | ✅ `127.0.0.1:3080`,返回 `401` 表示**有认证**,不是裸奔 |
 | Mac sshd 接受 | ✅ `publickey` + `password` + `keyboard-interactive`(三种都能用) |
-| Mac `authorized_keys` | 只有 1 把 key:`ssh-rsa ... zjl@dell-70DGA02ACN`(即 A 的公钥) |
+| Mac `authorized_keys` | 只有 1 把 key:`ssh-rsa ... <JUMP_USER>@<JUMP_HOSTNAME>`(即 A 的公钥) |
 | A 的转发设置 | 全默认:`AllowTcpForwarding yes`、`GatewayPorts no` |
 | A 需要配什么吗 | **完全不用改** |
 
@@ -23,7 +23,7 @@ Windows ──ssh──▶ A(172.16.134.43:2233) ──▶ A 的 127.0.0.1:12222
 | Host 头 | 结果 |
 |---|---|
 | `127.0.0.1:3080` / `127.0.0.1:13080` / `localhost:13080` | ✅ 401(放行到认证层) |
-| `192.168.3.135:13080` | ❌ 403(栅栏拒绝) |
+| `<MAC_LAN_IP>:13080` | ❌ 403(栅栏拒绝) |
 
 **所以隧道必须用 `127.0.0.1`,不能用局域网 IP。** 下面方案 A 让 Windows 本地端口也叫 3080,这样 authority 与 DSH 自己的完全一致,最省事。
 
@@ -45,7 +45,7 @@ ssh -V
 
 ```powershell
 ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\id_ed25519
-type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh -p 2233 zjl@172.16.134.43 "cat >> ~/.ssh/authorized_keys"
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh -p 2233 <JUMP_USER>@<JUMP_HOST> "cat >> ~/.ssh/authorized_keys"
 ```
 
 会被问一次 A 的密码,之后就不用再输了。不想配也行,每次手输 A 的密码。
@@ -66,12 +66,12 @@ Host mac
     IdentityFile ~/.ssh/id_ed25519
 
 Host mac-jump
-    HostName 172.16.134.43
+    HostName <JUMP_HOST>
     Port 2233
-    User zjl
+    User <JUMP_USER>
 ```
 
-> ⚠️ **必须这样写,不能图省事用 `ssh -J zjl@172.16.134.43:2233`** —— OpenSSH 的 `-J` **不接受内联端口**,那是常见踩坑点。
+> ⚠️ **必须这样写,不能图省事用 `ssh -J <JUMP_USER>@<JUMP_HOST>:2233`** —— OpenSSH 的 `-J` **不接受内联端口**,那是常见踩坑点。
 
 ### 第 4 步:起隧道(这条命令要一直开着)
 
@@ -109,10 +109,10 @@ scp -o ProxyJump=mac-jump D:\some\file.txt mac:/tmp/
 
 ```bash
 # 在 Mac 上
-ssh -N -R 13080:127.0.0.1:3080 zjl@172.16.134.43 -p 2233
+ssh -N -R 13080:127.0.0.1:3080 <JUMP_USER>@<JUMP_HOST> -p 2233
 ```
 
-然后 Windows 上只需 `ssh -N -L 3080:127.0.0.1:13080 -p 2233 zjl@172.16.134.43`,但**代价**是 Mac 上的 DSH 必须带 `--trusted-host` 启动:
+然后 Windows 上只需 `ssh -N -L 3080:127.0.0.1:13080 -p 2233 <JUMP_USER>@<JUMP_HOST>`,但**代价**是 Mac 上的 DSH 必须带 `--trusted-host` 启动:
 
 ```bash
 dsh web --host 127.0.0.1 --port 3080 --trusted-host 127.0.0.1:13080
@@ -135,7 +135,7 @@ dsh web --host 127.0.0.1 --port 3080 --trusted-host 127.0.0.1:13080
 | 症状 | 原因 / 处理 |
 |---|---|
 | `channel 2: open failed: connect failed: Connection refused` | **Mac 侧隧道断了**,A 上 12222 没人监听。到 Mac 上跑 `./revtunnel.sh status` |
-| Windows 上连接被拒 / 超时 | 检查 A 是否可达:`Test-NetConnection 172.16.134.43 -Port 2233` |
+| Windows 上连接被拒 / 超时 | 检查 A 是否可达:`Test-NetConnection <JUMP_HOST> -Port 2233` |
 | SSH 连上但 `Permission denied (publickey,password...)` | Windows 的密钥不在 Mac 的 `authorized_keys` 里 → 加公钥,或直接输 Mac 登录密码 |
 | 浏览器 401 | URL 里没带 `?token=...`,或 token 已过期(DSH 重启过)→ 重新从 Mac 上取 |
 | 浏览器 403 | Host 头不是 loopback → 确认访问的是 `127.0.0.1`,不是 `192.168.x.x` |
@@ -145,7 +145,7 @@ dsh web --host 127.0.0.1 --port 3080 --trusted-host 127.0.0.1:13080
 
 ## 有两点需要你确认
 
-1. **Windows 能直接访问 172.16.134.43:2233 吗?**(这是前提,我在这台 Mac 上无法探测你的 Windows)
+1. **Windows 能直接访问 <JUMP_HOST>:2233 吗?**(这是前提,我在这台 Mac 上无法探测你的 Windows)
 2. **要不要我把方案 B 的 Mac 侧做成常驻服务?** 这样 Mac 一登录就自动开好到 A 的 13080 通道,不用你每次手动跑 —— 我可以照 `macos-sshd-extra-port.sh` 的路子写一个 `dsh-web-tunnel` 的 launchd 脚本,带保活和自愈。
 
 另外提醒:目前那个 `sudo SSHD_EXTRA_BIND=127.0.0.1 bash macos-sshd-extra-port.sh install`(**收紧 26259 只绑回环**)你还没跑,26259 现在仍暴露在局域网上。这个和上面 Windows 方案互相独立,建议一并做掉。

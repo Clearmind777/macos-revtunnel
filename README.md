@@ -1,8 +1,8 @@
 # 反向 SSH 隧道使用说明
 
-让**机器 A(172.16.134.43)能 SSH 回这台 Mac**。
+让**机器 A(<JUMP_HOST>)能 SSH 回这台 Mac**。
 
-因为这台 Mac 在 NAT 后面(`192.168.3.135`),A 无法主动连进来 —— 实测:A 的 ping 100% 丢包、TCP 22 连接失败、traceroute 全是 `*`。所以方案是**由 Mac 主动连出**,在 A 上开一个监听端口,把连接反向送回 Mac 的 sshd。
+因为这台 Mac 在 NAT 后面(`<MAC_LAN_IP>`),A 无法主动连进来 —— 实测:A 的 ping 100% 丢包、TCP 22 连接失败、traceroute 全是 `*`。所以方案是**由 Mac 主动连出**,在 A 上开一个监听端口,把连接反向送回 Mac 的 sshd。
 
 配套脚本:
 
@@ -49,11 +49,11 @@
 
 ```mermaid
 flowchart LR
-    subgraph Mac["本机 Mac (192.168.3.135, NAT 后)"]
+    subgraph Mac["本机 Mac (<MAC_LAN_IP>, NAT 后)"]
         CLI["ssh 客户端"]
         SSHD["sshd :26259"]
     end
-    subgraph A["机器 A (172.16.134.43)"]
+    subgraph A["机器 A (<JUMP_HOST>)"]
         ASSHD["sshd :2233"]
         LIS["监听 127.0.0.1:12222"]
     end
@@ -109,7 +109,7 @@ ssh -p 12222 jalen@127.0.0.1
 
 - Mac 上「系统设置 → 通用 → 共享 → **远程登录**」必须打开(脚本 `doctor` 会检查)。
 - Mac 侧的 `26259` 必须真的有 sshd 在监听 —— 见 §6,不装的话隧道会连不上。
-- Mac → A 的 `2233` 端口免密登录要可用(现已可用);否则先 `ssh-copy-id -p 2233 zjl@172.16.134.43`。
+- Mac → A 的 `2233` 端口免密登录要可用(现已可用);否则先 `ssh-copy-id -p 2233 <JUMP_USER>@<JUMP_HOST>`。
 - **脚本所在目录不能是 `~/Documents`、`~/Desktop`、`~/Downloads`** —— 见 §6.5。
   当前脚本就在 `~/Documents` 下,已经通过运行时副本机制绕开,但你改完代码**必须重新 `install`**。
 - 想改回系统默认的 22:`RT_LOCAL_PORT=22 ./revtunnel.sh install`。
@@ -162,9 +162,9 @@ sudo SSHD_EXTRA_PORT=22222 bash macos-sshd-extra-port.sh install   # 换 Mac 侧
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `RT_HOST` | `172.16.134.43` | 机器 A 地址 |
+| `RT_HOST` | `<JUMP_HOST>` | 机器 A 地址 |
 | `RT_PORT` | `2233` | 机器 A 的 sshd 端口 |
-| `RT_USER` | `zjl` | 机器 A 上的登录用户 |
+| `RT_USER` | `<JUMP_USER>` | 机器 A 上的登录用户(占位符) |
 | `RT_REMOTE_BIND` | `127.0.0.1` | 隧道在 A 上绑定的地址 |
 | `RT_REMOTE_PORT` | `12222` | 隧道在 A 上监听的端口 |
 | `RT_LOCAL_HOST` | `127.0.0.1` | 目标地址(由 **Mac 侧**解析,默认即本机) |
@@ -341,7 +341,7 @@ scp -P 12222 ./本地文件 jalen@127.0.0.1:/tmp/
 # 4. 让 A 之外的人也能用:需要在 A 的 sshd_config 里
 #    GatewayPorts clientspecified
 #    然后 RT_REMOTE_BIND=0.0.0.0 ./revtunnel.sh install
-#    ⚠️ 这会把 Mac 的 26259 暴露给整个 172.16.134.0/24,默认不要开
+#    ⚠️ 这会把 Mac 的 26259 暴露给整个 <JUMP_LAN>/24,默认不要开
 ```
 
 ---
@@ -349,7 +349,7 @@ scp -P 12222 ./本地文件 jalen@127.0.0.1:/tmp/
 ## 8. 工作原理:为什么这几个参数一个都不能少
 
 ```bash
-ssh -N -R 127.0.0.1:12222:127.0.0.1:26259 zjl@172.16.134.43 -p 2233 \
+ssh -N -R 127.0.0.1:12222:127.0.0.1:26259 <JUMP_USER>@<JUMP_HOST> -p 2233 \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
   -o TCPKeepAlive=yes \
@@ -425,7 +425,7 @@ ssh -N -R 127.0.0.1:12222:127.0.0.1:26259 zjl@172.16.134.43 -p 2233 \
 
 ## 12. 验证记录
 
-本机实测时间:2026-09-25,目标 `zjl@172.16.134.43:2233`,Mac 侧 sshd 端口 `26259`。
+本机实测时间:2026-09-25,目标 `<JUMP_USER>@<JUMP_HOST>:2233`,Mac 侧 sshd 端口 `26259`。
 
 ### 环境实测参数
 

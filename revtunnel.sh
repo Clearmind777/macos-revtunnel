@@ -3,7 +3,7 @@
 # revtunnel.sh —— 反向 SSH 隧道(保活 + 自愈)
 #
 # 场景:
-#   本机(Mac)在 NAT 后面,只能主动连出;机器 A(172.16.134.43)无法反向连回本机。
+#   本机(Mac)在 NAT 后面,只能主动连出;机器 A(203.0.113.10)无法反向连回本机。
 #   本脚本在 Mac 上建立一条到 A 的反向隧道,让 A 能通过 127.0.0.1:<远端端口> 访问本机的 sshd。
 #
 # 关键设计(与普通 ssh -R 的差别):
@@ -37,9 +37,9 @@ SELF_PATH="$SELF_DIR/$(basename "$SELF")"
 # ---------------------------------------------------------------------------
 # 配置(全部可用同名环境变量覆盖)
 # ---------------------------------------------------------------------------
-RT_HOST="${RT_HOST:-172.16.134.43}"          # 机器 A 的地址
+RT_HOST="${RT_HOST:-203.0.113.10}"           # 机器 A 的地址(占位符,部署时用 RT_HOST 覆盖)
 RT_PORT="${RT_PORT:-2233}"                   # 机器 A 的 sshd 端口
-RT_USER="${RT_USER:-zjl}"                    # 机器 A 上的登录用户
+RT_USER="${RT_USER:-user}"                   # 机器 A 上的登录用户(占位符,用 RT_USER 覆盖)
 RT_REMOTE_BIND="${RT_REMOTE_BIND:-127.0.0.1}" # 隧道在 A 上绑定的地址(0.0.0.0 需 A 侧 GatewayPorts)
 RT_REMOTE_PORT="${RT_REMOTE_PORT:-12222}"    # 隧道在 A 上监听的端口
 RT_LOCAL_HOST="${RT_LOCAL_HOST:-127.0.0.1}"  # 目标地址,由"本机"侧解析连接(默认即本机 sshd)
@@ -797,7 +797,7 @@ revtunnel.sh —— 反向 SSH 隧道(保活 + 自愈)
   $0 doctor && $0 setup-auth && $0 install && $0 verify
 
 环境变量覆盖(安装时会写入 plist)
-  RT_HOST=172.16.134.43   RT_PORT=2233        RT_USER=zjl
+  RT_HOST=203.0.113.10   RT_PORT=2233        RT_USER=user
   RT_REMOTE_PORT=12222    RT_REMOTE_BIND=127.0.0.1
   RT_LOCAL_PORT=26259     RT_LOCAL_HOST=127.0.0.1
   RT_ALIVE_INTERVAL=30    RT_ALIVE_COUNT_MAX=3   RT_THROTTLE=10
