@@ -188,6 +188,18 @@ sudo SSHD_EXTRA_PORT=22222 bash macos-sshd-extra-port.sh install   # 换 Mac 侧
 | `SSHD_EXTRA_BIND` | 空(所有网卡) | 设为 `127.0.0.1` 则只允许本机回连,更安全 |
 | `SSHD_EXTRA_LABEL` | `local.sshd-extra-port` | launchd 服务标识 |
 
+> **关于默认值**:为了能在公开仓库里发布,本仓库脚本里的默认值是**占位符**
+> (`RT_HOST` 用 RFC 5737 文档保留地址 `203.0.113.10`,`RT_USER` 用 `user`)。
+> 部署时请显式覆盖,例如:
+>
+> ```bash
+> RT_HOST=<机器A地址> RT_USER=<登录用户> ./revtunnel.sh install
+> ```
+>
+> 一旦安装完成,`status` / `config` / `verify` / `doctor` 都会**从已安装的 plist 回读真实配置**
+> (输出的「配置来源」会标注是 plist 还是源码默认值),所以不必担心源码里的占位符干扰排查。
+> 同理,`macos-sshd-extra-port.sh` 与 `dsh-web-tunnel.sh` 也会从各自落地的位置回读。
+
 生成的 plist:
 
 - 隧道:`~/Library/LaunchAgents/com.jalen.revtunnel.plist`

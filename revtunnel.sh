@@ -96,6 +96,9 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "缺少命令: $1"; }
 # 组装 ssh 参数
 # ---------------------------------------------------------------------------
 build_ssh_args() {
+  # 已安装时以 plist 里的实际配置为准:源码默认值是公开仓库用的占位符,
+  # 若不加这一步,verify/doctor/setup-auth 会拿着占位符地址去连(假故障)。
+  load_installed_config >/dev/null 2>&1 || true
   SSH_ARGS=(
     -p "$RT_PORT"
     -o "ServerAliveInterval=${RT_ALIVE_INTERVAL}"
@@ -143,6 +146,39 @@ xml_escape() {
 
 is_installed() { [[ -f "$RT_PLIST" ]]; }
 is_loaded()    { launchctl print "$RT_DOMAIN/$RT_LABEL" >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------------------
+# 回读「已安装的」配置
+#
+# 为什么需要:源码里的默认值是占位符(便于公开仓库脱敏),而真正在跑的是
+# launchd 加载的那份 plist。若 status/config 直接用源码默认值,就会出现
+# "服务在跑、却拿着占位符地址去探测"的假故障。
+# 这里从 plist 读回实际值,让 status/config 始终反映**已部署的那份配置**。
+# 未安装时不做任何改动。
+# ---------------------------------------------------------------------------
+load_installed_config() {
+  is_installed || return 1
+  # 经 plutil 转成 JSON,再用 python3 取值。
+  # 不用 sed/awk 解析 plutil -p 的文本输出:那种写法要在 shell → sed/awk 两层
+  # 之间传递引号与括号,极易被某一层吃掉(已实测踩到两次)。
+  # 这里 python3 的源码用单引号包裹,shell 不做任何展开,行为完全确定。
+  local json kv
+  json="$(plutil -convert json -o - "$RT_PLIST" 2>/dev/null)" || return 1
+  [[ -n "$json" ]] || return 1
+  kv="$(printf '%s' "$json" | /usr/bin/python3 -c '
+import json, sys
+env = json.load(sys.stdin).get("EnvironmentVariables", {}) or {}
+for k in ("RT_HOST","RT_PORT","RT_USER","RT_REMOTE_BIND","RT_REMOTE_PORT",
+          "RT_LOCAL_HOST","RT_LOCAL_PORT","RT_IDENTITY","RT_ALIVE_INTERVAL",
+          "RT_ALIVE_COUNT_MAX","RT_CONNECT_TIMEOUT","RT_LOG","RT_LOG_MAX_BYTES"):
+    v = env.get(k)
+    if v is not None:
+        print("%s=%s" % (k, str(v).replace(chr(10), " ")))
+' 2>/dev/null)" || true
+  [[ -n "$kv" ]] || return 1
+  eval "$kv"
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 # TCC 检测 / 包装器
@@ -477,6 +513,8 @@ cmd_restart() {
 # status
 # ---------------------------------------------------------------------------
 cmd_status() {
+  # 已安装时以 plist 里的实际配置为准(源码默认值可能是占位符)
+  load_installed_config >/dev/null 2>&1 || true
   build_ssh_args
   printf '%s===== 隧道状态 =====%s\n' "$C_DIM" "$C_OFF"
 
@@ -737,7 +775,11 @@ cmd_logs() {
 }
 
 cmd_config() {
+  # 已安装时显示实际生效的配置,并明确标注来源
+  local src="源码默认值"
+  if load_installed_config >/dev/null 2>&1; then src="已安装的 plist($RT_PLIST)"; fi
   cat <<EOF
+配置来源              = $src
 RT_HOST               = $RT_HOST
 RT_PORT               = $RT_PORT
 RT_USER               = $RT_USER
